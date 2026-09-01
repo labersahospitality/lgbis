@@ -1,0 +1,14 @@
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (107kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (259kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+ Promise (<anonymous>)
+    at startServer (D:\DASHBOARD LABERSA GROUP\node_modules\next\dist\server\lib\start-server.js:191:11)
+    at D:\DASHBOARD LABERSA GROUP\node_modules\next\dist\server\lib\start-server.js:310:52
+    at Span.traceAsyncFn (D:\DASHBOARD LABERSA GROUP\node_modules\next\dist\trace\trace.js:154:26)
+    at process.<anonymous> (D:\DASHBOARD LABERSA GROUP\node_modules\next\dist\server\lib\start-server.js:310:35)
+    at process.emit (node:events:509:28) {
+  code: 'EADDRINUSE',
+  errno: -4091,
+  syscall: 'listen',
+  address: '::',
+  port: 3456
+}
