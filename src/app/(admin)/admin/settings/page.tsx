@@ -1,6 +1,6 @@
 'use client';
 
-import { Settings, Building2, Save } from 'lucide-react';
+import { Settings, Building2 } from 'lucide-react';
 import { BUSINESS_UNITS_ARRAY } from '@/lib/constants';
 
 export default function SettingsPage() {
@@ -87,7 +87,7 @@ export default function SettingsPage() {
               <p className="text-sm font-medium text-gray-900">Strict validation</p>
               <p className="text-xs text-gray-500">Tolak data jika ada metric yang gagal diparse</p>
             </div>
-            <div className="w-10 h-6 bg-blue-600 rounded-full relative">
+            <div className="w-10 h-6 bg-labersa rounded-full relative">
               <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 right-0.5 shadow-sm" />
             </div>
           </div>
@@ -96,7 +96,7 @@ export default function SettingsPage() {
               <p className="text-sm font-medium text-gray-900">Notification on need_review</p>
               <p className="text-xs text-gray-500">Kirim notifikasi ketika data perlu review</p>
             </div>
-            <div className="w-10 h-6 bg-blue-600 rounded-full relative">
+            <div className="w-10 h-6 bg-labersa rounded-full relative">
               <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 right-0.5 shadow-sm" />
             </div>
           </div>

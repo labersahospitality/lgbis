@@ -69,12 +69,10 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 Di Supabase Dashboard > Authentication > Users, buat user pertama:
 
-1. Sign up email pertama (admin@labersa.com)
-2. Di SQL Editor, update role:
-
-```sql
-UPDATE users SET role = 'super_admin' WHERE email = 'admin@labersa.com';
-```
+1. Buat user pertama via Supabase Dashboard > Authentication > Users
+2. Email: `labersa.hospitality@gmail.com`
+3. User Metadata: `{"full_name": "Super Admin", "role": "super_admin"}`
+4. Trigger `handle_new_user()` akan otomatis membuat profile dengan role `super_admin`
 
 ### 5. Run Development
 

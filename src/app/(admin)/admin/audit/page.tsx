@@ -1,6 +1,6 @@
 'use client';
 
-import { Shield, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 const DEMO_LOGS = [
   { id: '1', user: 'Admin Utama', action: 'INSERT', table: 'daily_reports', record: 'Report #1024', time: '2026-08-31 08:15:22' },
@@ -51,7 +51,7 @@ export default function AuditPage() {
                 <td className="px-5 py-3">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                     log.action === 'INSERT' ? 'bg-emerald-100 text-emerald-700' :
-                    log.action === 'UPDATE' ? 'bg-blue-100 text-blue-700' :
+                    log.action === 'UPDATE' ? 'bg-green-100 text-green-700' :
                     'bg-red-100 text-red-700'
                   }`}>
                     {log.action}

@@ -49,7 +49,7 @@ export default function RankingTable({ items, title, valueLabel = 'Revenue', isD
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
         {isDemo && (
-          <span className="text-[10px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">DEMO</span>
+          <span className="text-[10px] font-bold bg-green-100 text-green-600 px-1.5 py-0.5 rounded">DEMO</span>
         )}
       </div>
       <div className="overflow-x-auto">

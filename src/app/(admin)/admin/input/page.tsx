@@ -9,6 +9,8 @@ import {
   METRIC_LABELS,
 } from '@/lib/constants';
 import type { DivisionCode, ParsedMetric } from '@/lib/types';
+import { parseReport } from '@/lib/parser';
+import { createClient } from '@/lib/supabase/client';
 import {
   ClipboardEdit,
   Play,
@@ -26,6 +28,15 @@ interface ParsedPreview {
   warnings: string[];
 }
 
+interface PendingSave {
+  supabase: ReturnType<typeof createClient>;
+  user: { id: string };
+  businessUnitId: string;
+  periodGroups: Record<string, ParsedMetric[]>;
+  parsed: ParsedPreview;
+  rawText: string;
+}
+
 export default function AdminInputPage() {
   const [division, setDivision] = useState<DivisionCode | ''>('');
   const [unitId, setUnitId] = useState('');
@@ -37,6 +48,11 @@ export default function AdminInputPage() {
   const [parsed, setParsed] = useState<ParsedPreview | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  
+  
 
   const getUnits = () => {
     switch (division) {
@@ -54,18 +70,23 @@ export default function AdminInputPage() {
 
     setParsing(true);
 
-    // Simulate parsing delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Demo parser - extracts patterns from text
-    const metrics = extractMetricsFromText(rawText, division as DivisionCode);
+    // Use real parser
+    const unitName = selectedUnit?.name || '';
+    const unitCode = selectedUnit?.code || '';
+    const result = parseReport(
+      division as DivisionCode,
+      unitCode,
+      unitName,
+      rawText,
+    );
 
     const preview: ParsedPreview = {
-      unit_name: selectedUnit?.name || '',
-      unit_code: selectedUnit?.code || '',
+      unit_name: unitName,
+      unit_code: unitCode,
       report_date: reportDate,
-      metrics,
-      warnings: metrics.length === 0 ? ['Tidak ada metric yang berhasil diparsing. Periksa format laporan.'] : [],
+      metrics: result.data.metrics,
+      warnings: result.warnings.length > 0 ? result.warnings :
+        result.data.metrics.length === 0 ? ['Tidak ada metric yang berhasil diparsing. Periksa format laporan.'] : [],
     };
 
     setParsed(preview);
@@ -75,19 +96,234 @@ export default function AdminInputPage() {
   const handleSave = async () => {
     if (!parsed) return;
     setSaving(true);
+    setSaveError('');
 
-    // Simulate save to Supabase
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setSaveError('Anda harus login untuk menyimpan data.');
+        setSaving(false);
+        return;
+      }
 
+      // Group metrics by period (today_, mtd_, ytd_)
+      const periodGroups: Record<string, ParsedMetric[]> = {};
+      for (const metric of parsed.metrics) {
+        let period = 'daily';
+        if (metric.name.startsWith('today_')) period = 'daily';
+        else if (metric.name.startsWith('mtd_')) period = 'mtd';
+        else if (metric.name.startsWith('ytd_')) period = 'ytd';
+
+        if (!periodGroups[period]) periodGroups[period] = [];
+        periodGroups[period].push(metric);
+      }
+
+      // Look up business_unit_id from code
+      const allUnits = Object.values(BUSINESS_UNITS);
+      const unitEntry = allUnits.find(
+        (u) => u.code === parsed.unit_code || u.id === unitId
+      );
+      const businessUnitId = unitEntry?.id || unitId;
+// Check if any active data exists for the periods we are about to save
+       const { data: existingReports, error: checkError } = await supabase
+         .from('daily_reports')
+         .select('id, period_type')
+         .eq('business_unit_id', businessUnitId)
+         .eq('report_date', parsed.report_date)
+         .in('period_type', Object.keys(periodGroups));
+
+       if (checkError) {
+         console.error('[LGBIS] Cek laporan aktif error:', checkError);
+         setSaveError('Gagal memeriksa laporan yang ada.');
+         setSaving(false);
+         return;
+       }
+
+       if (existingReports && existingReports.length > 0) {
+         // Store data needed for save after confirmation
+         setPendingSave({ supabase, user, businessUnitId, periodGroups, parsed, rawText });
+         setShowConfirm(true);
+         setSaving(false);
+         return;
+       }
+
+      // Insert daily_reports + report_metrics for each period
+      for (const [periodType, metrics] of Object.entries(periodGroups)) {
+        // Upsert daily_report (handle existing rows with same unit+date+period)
+        const { data: report, error: reportError } = await supabase
+          .from('daily_reports')
+          .upsert({
+            business_unit_id: businessUnitId,
+            report_date: parsed.report_date,
+            period_type: periodType,
+            source: 'whatsapp',
+            raw_text: rawText,
+            created_by: user.id,
+          }, {
+            onConflict: 'business_unit_id,report_date,period_type',
+          })
+          .select('id')
+          .single();
+
+        if (reportError) {
+          console.error('[LGBIS] daily_reports upsert error:', reportError);
+          setSaveError(`Gagal menyimpan laporan: ${reportError.message}`);
+          setSaving(false);
+          return;
+        }
+
+        // Delete old metrics for this report (in case of re-save)
+        await supabase
+          .from('report_metrics')
+          .delete()
+          .eq('daily_report_id', report.id);
+
+        // Create report_metrics
+        const metricRows = metrics.map((m) => ({
+          daily_report_id: report.id,
+          metric_name: m.name,
+          metric_category: m.category,
+          actual_value: m.actual,
+          budget_value: m.budget,
+          variance_value: m.variance,
+          achievement_percent: m.achievement,
+          unit: m.unit,
+        }));
+
+        const { error: metricsError } = await supabase
+          .from('report_metrics')
+          .insert(metricRows);
+
+        if (metricsError) {
+          console.error('[LGBIS] report_metrics insert error:', metricsError);
+          setSaveError(`Gagal menyimpan metrics: ${metricsError.message}`);
+          setSaving(false);
+          return;
+        }
+
+        // Log to report_imports
+        await supabase.from('report_imports').insert({
+          business_unit_id: businessUnitId,
+          report_date: parsed.report_date,
+          raw_text: rawText,
+          parsed_data: JSON.stringify(metrics),
+          status: 'saved',
+          created_by: user.id,
+        });
+      }
+
+      setSaving(false);
+      setSaved(true);
+
+      // Reset after 3 seconds
+      setTimeout(() => {
+        setSaved(false);
+        setParsed(null);
+        setRawText('');
+      }, 3000);
+    } catch (err) {
+      console.error('[LGBIS] Save error:', err);
+      setSaveError('Terjadi kesalahan saat menyimpan. Silakan coba lagi.');
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingSave) return;
+    setSaving(true);
+    setSaveError('');
+
+    try {
+      const { supabase, user, businessUnitId, periodGroups, parsed, rawText } = pendingSave;
+      for (const [periodType, metrics] of Object.entries(periodGroups)) {
+        const { data: report, error: reportError } = await supabase
+          .from('daily_reports')
+          .upsert(
+            {
+              business_unit_id: businessUnitId,
+              report_date: parsed.report_date,
+              period_type: periodType,
+              source: 'whatsapp',
+              raw_text: rawText,
+              created_by: user.id,
+            },
+            { onConflict: 'business_unit_id,report_date,period_type' }
+          )
+          .select('id')
+          .single();
+
+        if (reportError) {
+          console.error('[LGBIS] daily_reports upsert error:', reportError);
+          setSaveError(`Gagal menyimpan laporan: ${reportError.message}`);
+          setSaving(false);
+          setPendingSave(null);
+          setShowConfirm(false);
+          return;
+        }
+
+        await supabase
+          .from('report_metrics')
+          .delete()
+          .eq('daily_report_id', report.id);
+
+        const metricRows = metrics.map((m) => ({
+          daily_report_id: report.id,
+          metric_name: m.name,
+          metric_category: m.category,
+          actual_value: m.actual,
+          budget_value: m.budget,
+          variance_value: m.variance,
+          achievement_percent: m.achievement,
+          unit: m.unit,
+        }));
+
+        const { error: metricsError } = await supabase
+          .from('report_metrics')
+          .insert(metricRows);
+
+        if (metricsError) {
+          console.error('[LGBIS] report_metrics insert error:', metricsError);
+          setSaveError(`Gagal menyimpan metrics: ${metricsError.message}`);
+          setSaving(false);
+          setPendingSave(null);
+          setShowConfirm(false);
+          return;
+        }
+
+        await supabase.from('report_imports').insert({
+          business_unit_id: businessUnitId,
+          report_date: parsed.report_date,
+          raw_text: rawText,
+          parsed_data: JSON.stringify(metrics),
+          status: 'saved',
+          created_by: user.id,
+        });
+      }
+
+      setSaving(false);
+      setSaved(true);
+      setPendingSave(null);
+      setShowConfirm(false);
+
+      setTimeout(() => {
+        setSaved(false);
+        setParsed(null);
+        setRawText('');
+      }, 3000);
+    } catch (err) {
+      console.error('[LGBIS] Save error:', err);
+      setSaveError('Terjadi kesalahan saat menyimpan. Silakan coba lagi.');
+      setSaving(false);
+      setPendingSave(null);
+      setShowConfirm(false);
+    }
+  };
+
+  const handleCancelSave = () => {
+    setPendingSave(null);
+    setShowConfirm(false);
     setSaving(false);
-    setSaved(true);
-
-    // Reset after 3 seconds
-    setTimeout(() => {
-      setSaved(false);
-      setParsed(null);
-      setRawText('');
-    }, 3000);
   };
 
   const handleReset = () => {
@@ -109,6 +345,15 @@ export default function AdminInputPage() {
           <CheckCircle className="w-5 h-5 text-emerald-600" />
           <span className="text-sm font-medium text-emerald-700">
             Laporan berhasil disimpan ke database!
+          </span>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600" />
+          <span className="text-sm font-medium text-red-700">
+            {saveError}
           </span>
         </div>
       )}
@@ -206,6 +451,30 @@ export default function AdminInputPage() {
                   disabled={!rawText.trim() || !unitId || !reportDate || parsing}
                   className="btn-primary"
                 >
+{showConfirm && (
+   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+     <div className="bg-white rounded-lg p-6 w-96">
+       <h3 className="text-lg font-medium mb-4">Konfirmasi Penyimpanan</h3>
+       <p className="mb-6">
+         Data laporan untuk unit dan tanggal tersebut sudah pernah disimpan. Jika dilanjutkan, data aktif akan diganti dengan data baru. Lanjutkan?
+       </p>
+       <div className="flex justify-end gap-3">
+         <button
+           onClick={handleCancelSave}
+           className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+         >
+           Batal
+         </button>
+         <button
+           onClick={handleConfirmSave}
+           className="px-4 py-2 bg-labersa text-white rounded hover:bg-labersa-dark"
+         >
+           Konfirmasi
+         </button>
+       </div>
+     </div>
+   </div>
+ )}
                   {parsing ? (
                     <>
                       <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -347,72 +616,3 @@ export default function AdminInputPage() {
   );
 }
 
-// ============================================================
-// PARSER HELPER - Modular, extensible per division
-// ============================================================
-function extractMetricsFromText(text: string, division: DivisionCode): ParsedMetric[] {
-  const metrics: ParsedMetric[] = [];
-  const lines = text.split('\n');
-
-  for (const line of lines) {
-    const normalized = line.toLowerCase().replace(/[,:]/g, '').trim();
-    if (!normalized) continue;
-
-    // Common patterns
-    const patterns: Array<{ regex: RegExp; name: string; category: string; unit: 'currency' | 'percent' | 'number' }> = [
-      // Hotel patterns
-      { regex: /occupancy\s*[:.]?\s*(\d+\.?\d*)\s*%?/i, name: 'occupancy', category: 'room', unit: 'percent' },
-      { regex: /room\s*sold\s*[:.]?\s*([\d.,]+)/i, name: 'room_sold', category: 'room', unit: 'number' },
-      { regex: /available\s*room\s*[:.]?\s*([\d.,]+)/i, name: 'available_room', category: 'room', unit: 'number' },
-      { regex: /(?:arr|average\s*room\s*rate)\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'arr', category: 'room', unit: 'currency' },
-      { regex: /room\s*revenue\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'room_revenue', category: 'revenue', unit: 'currency' },
-      { regex: /(?:f&?b|food\s*&?\s*beverage)\s*revenue\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'fb_revenue', category: 'revenue', unit: 'currency' },
-      { regex: /other\s*revenue\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'other_revenue', category: 'revenue', unit: 'currency' },
-      { regex: /total\s*revenue\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'total_revenue', category: 'revenue', unit: 'currency' },
-
-      // Waterpark patterns
-      { regex: /visitor\s*[:.]?\s*([\d.,]+)/i, name: 'visitor', category: 'traffic', unit: 'number' },
-      { regex: /pengunjung\s*[:.]?\s*([\d.,]+)/i, name: 'visitor', category: 'traffic', unit: 'number' },
-
-      // Golf patterns
-      { regex: /(?:total\s*)?player\s*[:.]?\s*([\d.,]+)/i, name: 'total_player', category: 'traffic', unit: 'number' },
-
-      // Common patterns
-      { regex: /budget\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'budget', category: 'financial', unit: 'currency' },
-      { regex: /revenue\s*[:.]?\s*(?:rp\.?\s*)?([\d.,]+)/i, name: 'revenue', category: 'revenue', unit: 'currency' },
-    ];
-
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern.regex);
-      if (match) {
-        const value = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
-
-        if (!isNaN(value) && value > 0) {
-          // Check if metric already exists
-          const existing = metrics.find((m) => m.name === pattern.name);
-          if (!existing) {
-            metrics.push({
-              name: pattern.name,
-              category: pattern.category,
-              actual: value,
-              budget: null,
-              variance: null,
-              achievement: null,
-              unit: pattern.unit,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  // Calculate variance and achievement where budget is available
-  for (const metric of metrics) {
-    if (metric.actual !== null && metric.budget !== null && metric.budget > 0) {
-      metric.variance = metric.actual - metric.budget;
-      metric.achievement = (metric.actual / metric.budget) * 100;
-    }
-  }
-
-  return metrics;
-}

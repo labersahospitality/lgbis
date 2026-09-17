@@ -28,11 +28,11 @@ export default function KPICard({
   return (
     <div className={cn(
       'bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow relative',
-      isDemo && 'border-2 border-dashed border-blue-200 bg-blue-50/30',
+      isDemo && 'border-2 border-dashed border-gold/20 bg-gold/10',
       className
     )}>
       {isDemo && (
-        <span className="absolute top-2 right-2 text-[10px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
+        <span className="absolute top-2 right-2 text-[10px] font-bold bg-gold/20 text-gold px-1.5 py-0.5 rounded">
           DEMO
         </span>
       )}

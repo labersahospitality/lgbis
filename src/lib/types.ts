@@ -110,18 +110,6 @@ export interface ParsedMetric {
   unit: string;
 }
 
-// Dashboard aggregated data
-export interface DashboardKPI {
-  label: string;
-  value: number;
-  budget: number | null;
-  variance: number | null;
-  achievement: number | null;
-  trend: number | null;
-  unit: string;
-  format: 'currency' | 'percent' | 'number';
-}
-
 export interface ChartDataPoint {
   date: string;
   label: string;
@@ -140,9 +128,43 @@ export interface UnitPerformance {
   rank: number;
 }
 
-export type DateFilter = 'today' | 'yesterday' | 'this_month' | 'previous_month' | 'ytd' | 'custom';
+export type DateFilter = 'today' | 'yesterday' | 'this_month' | 'previous_month' | 'ytd' | 'custom' | 'latest';
 
 export interface DateRange {
   start: string;
   end: string;
 }
+
+// ── Dashboard Snapshot Types ─────────────────────────────────
+
+/** A single metric value from a specific report snapshot */
+export interface UnitMetricSnapshot {
+  unitId: string;
+  unitName: string;
+  selectedDate: string;
+  sourceReportDate: string;
+  periodType: 'daily' | 'mtd' | 'ytd';
+  metricName: string;
+  actualValue: number | null;
+  budgetValue: number | null;
+}
+
+/** KPI card with source transparency */
+export interface DashboardKPIValue {
+  value: number;
+  budget: number | null;
+  achievement: number | null;
+  sourceDate: string;
+  unitBreakdown: UnitMetricSnapshot[];
+}
+
+/** Latest report date per business unit */
+export interface UnitLatestDate {
+  unitId: string;
+  unitName: string;
+  divisionId: string;
+  latestDailyDate: string | null;
+  latestMtdDate: string | null;
+  latestYtdDate: string | null;
+}
+

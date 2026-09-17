@@ -23,16 +23,37 @@ export abstract class BaseParser {
   abstract parse(text: string): ParserResult;
 
   protected extractDate(text: string): string | null {
-    const patterns = [
+    const monthMap: Record<string, string> = {
+      januari: '01', jan: '01', februari: '02', feb: '02', maret: '03', mar: '03',
+      april: '04', apr: '04', mei: '05', juni: '06', jun: '06', juli: '07', jul: '07',
+      agustus: '08', agu: '08', september: '09', sep: '09', oktober: '10', okt: '10',
+      november: '11', nov: '11', desember: '12', des: '12',
+    };
+
+    // Pattern: DD/MM/YYYY or DD-MM-YYYY
+    const slashPatterns = [
       /date\s*[:.]?\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
       /tanggal\s*[:.]?\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i,
       /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
     ];
 
-    for (const pattern of patterns) {
+    for (const pattern of slashPatterns) {
       const match = text.match(pattern);
       if (match) {
         return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+      }
+    }
+
+    // Pattern: DD Month YYYY (e.g., "31 Agustus 2026", "31 AUGUST 2026")
+    const monthPattern = /(\d{1,2})\s+(\w+)\s+(\d{4})/;
+    const monthMatch = text.match(monthPattern);
+    if (monthMatch) {
+      const day = monthMatch[1];
+      const monthStr = monthMatch[2].toLowerCase();
+      const year = monthMatch[3];
+      const monthNum = monthMap[monthStr];
+      if (monthNum) {
+        return `${year}-${monthNum}-${day.padStart(2, '0')}`;
       }
     }
 

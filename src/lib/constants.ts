@@ -112,6 +112,23 @@ export const GOLF_METRICS = [
   'achievement',
 ] as const;
 
+// ── Canonical Revenue Metrics ────────────────────────────────
+// Maps division code to the exact metric name for each period.
+// Used by dashboard-data.ts to avoid double counting.
+export const CANONICAL_REVENUE_METRIC: Record<DivisionCode, { today: string; mtd: string; ytd: string }> = {
+  HOTEL:     { today: 'today_total_revenue', mtd: 'mtd_total_revenue', ytd: 'ytd_total_revenue' },
+  WATERPARK: { today: 'today_revenue',      mtd: 'mtd_revenue',      ytd: 'ytd_revenue' },
+  GOLF:      { today: 'today_total_revenue', mtd: 'mtd_total_revenue', ytd: 'ytd_total_revenue' },
+} as const;
+
+// Canonical revenue metric for a given business unit (resolved via division_id)
+export function getRevenueMetric(divisionId: string, period: 'today' | 'mtd' | 'ytd'): string | null {
+  if (divisionId === 'div-hotel')     return CANONICAL_REVENUE_METRIC.HOTEL[period];
+  if (divisionId === 'div-waterpark') return CANONICAL_REVENUE_METRIC.WATERPARK[period];
+  if (divisionId === 'div-golf')      return CANONICAL_REVENUE_METRIC.GOLF[period];
+  return null;
+}
+
 export const METRIC_LABELS: Record<string, string> = {
   occupancy: 'Occupancy',
   room_sold: 'Room Sold',

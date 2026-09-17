@@ -28,7 +28,7 @@ export default function UnitsPage() {
               {units.map((unit) => (
                 <div key={unit.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600">
+                    <div className="w-10 h-10 rounded-lg bg-gold/10 flex items-center justify-center text-gold">
                       <Building2 className="w-5 h-5" />
                     </div>
                     <div>

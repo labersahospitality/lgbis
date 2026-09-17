@@ -46,26 +46,30 @@ export async function updateSession(request: NextRequest) {
 
   // Role-based routing
   if (user) {
-    const { data: profile } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    try {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single();
 
-    if (profile) {
-      const pathname = request.nextUrl.pathname;
+      if (profile) {
+        const pathname = request.nextUrl.pathname;
 
-      if (profile.role === 'admin_input' && pathname.startsWith('/management')) {
-        const url = request.nextUrl.clone();
-        url.pathname = '/admin/input';
-        return NextResponse.redirect(url);
+        if (profile.role === 'admin_input' && pathname.startsWith('/management')) {
+          const url = request.nextUrl.clone();
+          url.pathname = '/admin/input';
+          return NextResponse.redirect(url);
+        }
+
+        if (profile.role === 'management' && pathname.startsWith('/admin')) {
+          const url = request.nextUrl.clone();
+          url.pathname = '/management';
+          return NextResponse.redirect(url);
+        }
       }
-
-      if (profile.role === 'management' && pathname.startsWith('/admin')) {
-        const url = request.nextUrl.clone();
-        url.pathname = '/management';
-        return NextResponse.redirect(url);
-      }
+    } catch {
+      // Profile query failed (e.g., RLS issue) — allow through without redirect
     }
   }
 

@@ -51,7 +51,7 @@ interface SidebarProps {
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, signOut, hasRole } = useAuth();
+  const { profile, signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
 
   const getNavItems = () => {
@@ -101,7 +101,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed top-0 left-0 z-50 h-full bg-slate-900 text-white transition-all duration-300 flex flex-col',
+          'fixed top-0 left-0 z-50 h-full bg-labersa-dark text-white transition-all duration-300 flex flex-col',
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
           collapsed ? 'w-[72px]' : 'w-64'
         )}
@@ -110,7 +110,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <div className="flex items-center justify-between px-4 h-16 border-b border-slate-700/50">
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-xs font-semibold text-blue-400 tracking-wider">LABERSA GROUP</span>
+               <span className="text-xs font-semibold text-green-400 tracking-wider">LABERSA GROUP</span>
               <span className="text-[10px] text-slate-400">BUSINESS INTELLIGENCE</span>
             </div>
           )}
@@ -155,12 +155,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
                   isActive
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                    ? 'text-labersa hover:text-labersa-dark'
                     : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
                 )}
                 title={collapsed ? item.label : undefined}
               >
-                {Icon && <Icon className={cn('w-5 h-5 flex-shrink-0', isActive ? 'text-white' : 'text-slate-400')} />}
+                {Icon && <Icon className={cn('w-5 h-5 flex-shrink-0', isActive ? 'text-labersa' : 'text-slate-400')} />}
                 {!collapsed && <span>{item.label}</span>}
               </Link>
             );

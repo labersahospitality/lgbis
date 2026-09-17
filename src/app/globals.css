@@ -24,7 +24,7 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-labersa text-white text-sm font-semibold rounded-lg hover:bg-labersa-dark transition-colors shadow-sm;
   }
 
   .btn-secondary {
@@ -40,15 +40,15 @@
   }
 
   .input-field {
-    @apply w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all;
+    @apply w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-labersa focus:border-labersa transition-all;
   }
 
   .select-field {
-    @apply w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none;
+    @apply w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-labersa focus:border-labersa transition-all appearance-none;
   }
 
   .textarea-field {
-    @apply w-full px-3 py-3 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-y min-h-[200px];
+    @apply w-full px-3 py-3 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-labersa focus:border-labersa transition-all resize-y min-h-[200px];
   }
 
   .page-header {
@@ -70,7 +70,11 @@
   .grid-charts {
     @apply grid grid-cols-1 lg:grid-cols-2 gap-4;
   }
+.bg-labersa {
+    background-color: #006B3F;
+  }
 }
+
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {

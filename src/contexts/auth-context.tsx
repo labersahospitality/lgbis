@@ -1,10 +1,9 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { User, UserRole } from '@/lib/types';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
   user: SupabaseUser | null;
@@ -28,74 +27,112 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const supabase = createClient();
+  const mountedRef = useRef(true);
 
+  // Stabilize supabase client — create once, reuse forever
+  const supabase = useMemo(() => createClient(), []);
+
+  // Cleanup flag on unmount
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      setUser(authUser);
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-      if (authUser) {
-        const { data } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', authUser.id)
-          .single();
+  // Memoize fetchProfile to prevent re-renders from changing reference
+  const fetchProfile = useCallback(async (userId: string) => {
+    try {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      if (mountedRef.current) {
         setProfile(data as User);
       }
+    } catch {
+      // Profile fetch failed — user might not have a profile row yet.
+      if (mountedRef.current) {
+        setProfile(null);
+      }
+    }
+  }, [supabase]);
 
-      setLoading(false);
+  // Initial auth check + onAuthStateChange listener — runs ONCE
+  useEffect(() => {
+    let cancelled = false;
+
+    const getUser = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!cancelled && mountedRef.current) {
+          setUser(authUser);
+          if (authUser) {
+            await fetchProfile(authUser.id);
+          }
+        }
+      } catch {
+        // Auth check failed
+      } finally {
+        if (!cancelled && mountedRef.current) {
+          setLoading(false);
+        }
+      }
     };
 
     getUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (cancelled || !mountedRef.current) return;
+
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          const { data } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          setProfile(data as User);
+          await fetchProfile(session.user.id);
         } else {
           setProfile(null);
         }
 
-        setLoading(false);
+        if (mountedRef.current) {
+          setLoading(false);
+        }
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [supabase, fetchProfile]);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  // Memoize signIn to prevent child re-renders from creating new references
+  const signIn = useCallback(async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      return { error: error.message };
+      if (error) {
+        return { error: error.message };
+      }
+
+      return {};
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Terjadi kesalahan jaringan';
+      return { error: message };
     }
+  }, [supabase]);
 
-    router.refresh();
-    return {};
-  };
-
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
-    router.push('/login');
-  };
+  }, [supabase]);
 
-  const hasRole = (...roles: UserRole[]) => {
+  const hasRole = useCallback((...roles: UserRole[]) => {
     return profile ? roles.includes(profile.role) : false;
-  };
+  }, [profile]);
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, signIn, signOut, hasRole }}>

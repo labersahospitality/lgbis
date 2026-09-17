@@ -1,7 +1,5 @@
 'use client';
 
-import { cn } from '@/lib/utils';
-
 interface ComparisonRow {
   unit_name: string;
   division?: string;
@@ -16,6 +14,8 @@ interface ComparisonTableProps {
   rows: ComparisonRow[];
   title: string;
   isDemo?: boolean;
+  /** Optional total row rendered as a bold footer (e.g. group totals). */
+  totalRow?: ComparisonRow;
 }
 
 function formatValue(value: number | null, format: 'currency' | 'percent' | 'number'): string {
@@ -34,7 +34,7 @@ function formatValue(value: number | null, format: 'currency' | 'percent' | 'num
   }
 }
 
-export default function ComparisonTable({ rows, title, isDemo = false }: ComparisonTableProps) {
+export default function ComparisonTable({ rows, title, isDemo = false, totalRow }: ComparisonTableProps) {
   if (rows.length === 0) return null;
 
   const metricLabels = rows[0].metrics.map((m) => m.label);
@@ -44,7 +44,7 @@ export default function ComparisonTable({ rows, title, isDemo = false }: Compari
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
         {isDemo && (
-          <span className="text-[10px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">DEMO</span>
+          <span className="text-[10px] font-bold bg-gold/20 text-gold px-1.5 py-0.5 rounded">DEMO</span>
         )}
       </div>
       <div className="overflow-x-auto">
@@ -71,6 +71,19 @@ export default function ComparisonTable({ rows, title, isDemo = false }: Compari
               </tr>
             ))}
           </tbody>
+          {totalRow && (
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50">
+                <td className="py-3 font-bold text-gray-900">{totalRow.unit_name}</td>
+                {totalRow.division && <td className="py-3 font-semibold text-gray-500">{totalRow.division}</td>}
+                {totalRow.metrics.map((metric, j) => (
+                  <td key={j} className="py-3 text-right font-bold text-gray-900">
+                    {formatValue(metric.value, metric.format)}
+                  </td>
+                ))}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

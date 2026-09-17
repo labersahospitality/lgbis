@@ -1,15 +1,20 @@
 -- ============================================================
 -- LABERSA GROUP BUSINESS INTELLIGENCE (LGBIS) - Database Schema
 -- ============================================================
+-- Compatible with Supabase. Run this entire file on an empty
+-- database. Creates tables, seed data, triggers, RLS policies,
+-- and helper functions.
+-- ============================================================
 
--- Enable UUID extension
+-- Enable UUID extension (still needed for auto-generated PKs)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
 -- DIVISIONS
+-- id uses TEXT to match application constants (div-hotel, etc.)
 -- ============================================================
 CREATE TABLE divisions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   code VARCHAR(20) NOT NULL UNIQUE,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -22,10 +27,12 @@ INSERT INTO divisions (id, name, code) VALUES
 
 -- ============================================================
 -- BUSINESS UNITS
+-- id uses TEXT to match application constants (bu-hotel-pku, etc.)
+-- division_id is TEXT to match divisions.id
 -- ============================================================
 CREATE TABLE business_units (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  division_id UUID NOT NULL REFERENCES divisions(id),
+  id TEXT PRIMARY KEY,
+  division_id TEXT NOT NULL REFERENCES divisions(id),
   name VARCHAR(200) NOT NULL,
   code VARCHAR(50) NOT NULL UNIQUE,
   active BOOLEAN DEFAULT true,
@@ -33,17 +40,18 @@ CREATE TABLE business_units (
 );
 
 INSERT INTO business_units (id, division_id, name, code) VALUES
-  ('bu-hotel-pku', 'div-hotel', 'Labersa Hotel Pekanbaru', 'HOTEL_PKU'),
-  ('bu-hotel-toba', 'div-hotel', 'Labersa Hotel Toba', 'HOTEL_TOBA'),
-  ('bu-hotel-samosir', 'div-hotel', 'Labersa Hotel Samosir', 'HOTEL_SAMOSIR'),
-  ('bu-wp-htn', 'div-waterpark', 'Waterpark HTN', 'WP_HTN'),
-  ('bu-wp-rifan', 'div-waterpark', 'Waterpark RIFAN', 'WP_RIFAN'),
-  ('bu-wp-tofan', 'div-waterpark', 'Waterpark TOFAN', 'WP_TOFAN'),
-  ('bu-wp-sifan', 'div-waterpark', 'Waterpark SIFAN', 'WP_SIFAN'),
-  ('bu-golf', 'div-golf', 'Labersa Golf', 'GOLF');
+  ('bu-hotel-pku',    'div-hotel',     'Labersa Hotel Pekanbaru', 'HOTEL_PKU'),
+  ('bu-hotel-toba',   'div-hotel',     'Labersa Hotel Toba',      'HOTEL_TOBA'),
+  ('bu-hotel-samosir','div-hotel',     'Labersa Hotel Samosir',   'HOTEL_SAMOSIR'),
+  ('bu-wp-htn',       'div-waterpark', 'Waterpark HTN',           'WP_HTN'),
+  ('bu-wp-rifan',     'div-waterpark', 'Waterpark RIFAN',         'WP_RIFAN'),
+  ('bu-wp-tofan',     'div-waterpark', 'Waterpark TOFAN',         'WP_TOFAN'),
+  ('bu-wp-sifan',     'div-waterpark', 'Waterpark SIFAN',         'WP_SIFAN'),
+  ('bu-golf',         'div-golf',      'Labersa Golf',            'GOLF');
 
 -- ============================================================
 -- USERS (extends Supabase auth.users)
+-- id stays UUID because it references auth.users(id)
 -- ============================================================
 CREATE TABLE users (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -60,21 +68,38 @@ CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.users (id, email, full_name, role)
-  VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email), COALESCE(NEW.raw_user_meta_data->>'role', 'admin_input'));
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
+    COALESCE(NEW.raw_user_meta_data->>'role', 'admin_input')
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+-- Only create trigger if it doesn't already exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'on_auth_user_created'
+  ) THEN
+    CREATE TRIGGER on_auth_user_created
+      AFTER INSERT ON auth.users
+      FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+  END IF;
+END
+$$;
 
 -- ============================================================
 -- DAILY REPORTS
+-- id: UUID (auto-generated)
+-- business_unit_id: TEXT (references business_units.id)
+-- created_by: UUID (references users.id → auth.users)
 -- ============================================================
 CREATE TABLE daily_reports (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  business_unit_id UUID NOT NULL REFERENCES business_units(id),
+  business_unit_id TEXT NOT NULL REFERENCES business_units(id),
   report_date DATE NOT NULL,
   period_type VARCHAR(10) NOT NULL DEFAULT 'daily' CHECK (period_type IN ('daily', 'mtd', 'ytd')),
   source VARCHAR(50) DEFAULT 'whatsapp',
@@ -87,6 +112,8 @@ CREATE TABLE daily_reports (
 
 -- ============================================================
 -- REPORT METRICS
+-- id: UUID (auto-generated)
+-- daily_report_id: UUID (references daily_reports.id)
 -- ============================================================
 CREATE TABLE report_metrics (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -106,10 +133,12 @@ CREATE INDEX idx_report_metrics_name ON report_metrics(metric_name);
 
 -- ============================================================
 -- BUDGETS
+-- id: UUID (auto-generated)
+-- business_unit_id: TEXT (references business_units.id)
 -- ============================================================
 CREATE TABLE budgets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  business_unit_id UUID NOT NULL REFERENCES business_units(id),
+  business_unit_id TEXT NOT NULL REFERENCES business_units(id),
   year INTEGER NOT NULL,
   month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
   day INTEGER CHECK (day BETWEEN 1 AND 31),
@@ -125,10 +154,13 @@ CREATE INDEX idx_budgets_metric ON budgets(metric_name);
 
 -- ============================================================
 -- REPORT IMPORTS
+-- id: UUID (auto-generated)
+-- business_unit_id: TEXT (references business_units.id)
+-- created_by: UUID (references users.id)
 -- ============================================================
 CREATE TABLE report_imports (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  business_unit_id UUID NOT NULL REFERENCES business_units(id),
+  business_unit_id TEXT NOT NULL REFERENCES business_units(id),
   report_date DATE NOT NULL,
   raw_text TEXT NOT NULL,
   parsed_data JSONB DEFAULT '{}',
@@ -142,13 +174,16 @@ CREATE INDEX idx_report_imports_unit_date ON report_imports(business_unit_id, re
 
 -- ============================================================
 -- AUDIT LOGS
+-- id: UUID (auto-generated)
+-- user_id: UUID (references users.id)
+-- record_id: TEXT (flexible — references vary by table_name)
 -- ============================================================
 CREATE TABLE audit_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id),
   action VARCHAR(50) NOT NULL,
   table_name VARCHAR(50) NOT NULL,
-  record_id UUID,
+  record_id TEXT,
   details JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -156,6 +191,17 @@ CREATE TABLE audit_logs (
 CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_table ON audit_logs(table_name);
 CREATE INDEX idx_audit_logs_created ON audit_logs(created_at DESC);
+
+-- ============================================================
+-- HELPER FUNCTIONS (must be created BEFORE RLS policies)
+-- ============================================================
+
+-- Get current user's role — SECURITY DEFINER bypasses RLS to avoid
+-- infinite recursion when policies on the users table reference this function.
+CREATE OR REPLACE FUNCTION get_user_role()
+RETURNS TEXT AS $$
+  SELECT role FROM users WHERE id = auth.uid();
+$$ LANGUAGE SQL SECURITY DEFINER STABLE;
 
 -- ============================================================
 -- ROW LEVEL SECURITY
@@ -169,67 +215,56 @@ ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE report_imports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
+-- ---------- USERS ----------
 -- Users can read their own profile
 CREATE POLICY "Users can view own profile" ON users
   FOR SELECT USING (auth.uid() = id);
 
--- Super admins can manage all users
+-- Super admins can manage all users (uses get_user_role() to avoid recursion)
 CREATE POLICY "Super admins can manage users" ON users
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'super_admin')
-  );
+  FOR ALL USING (get_user_role() = 'super_admin');
 
--- Everyone can read divisions and business units
+-- ---------- DIVISIONS ----------
 CREATE POLICY "Authenticated users can view divisions" ON divisions
   FOR SELECT USING (auth.role() = 'authenticated');
 
+-- ---------- BUSINESS UNITS ----------
 CREATE POLICY "Authenticated users can view business units" ON business_units
   FOR SELECT USING (auth.role() = 'authenticated');
 
--- Management and Auditor can read all reports
+-- ---------- DAILY REPORTS ----------
+-- Management, Auditor and Super Admin can read all reports
 CREATE POLICY "Management and Auditor can view reports" ON daily_reports
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('management', 'auditor', 'super_admin'))
-  );
+  FOR SELECT USING (get_user_role() IN ('management', 'auditor', 'super_admin'));
 
--- Admin Input can manage their own reports
+-- Admin Input and Super Admin can manage reports
 CREATE POLICY "Admin can manage own reports" ON daily_reports
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin_input', 'super_admin'))
-  );
+  FOR ALL USING (get_user_role() IN ('admin_input', 'super_admin'));
 
--- Report metrics follow same policy as their parent report
+-- ---------- REPORT METRICS ----------
 CREATE POLICY "Authenticated users can view metrics" ON report_metrics
   FOR SELECT USING (auth.role() = 'authenticated');
 
 CREATE POLICY "Admin can manage metrics" ON report_metrics
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin_input', 'super_admin'))
-  );
+  FOR ALL USING (get_user_role() IN ('admin_input', 'super_admin'));
 
--- Budgets
+-- ---------- BUDGETS ----------
 CREATE POLICY "Authenticated users can view budgets" ON budgets
   FOR SELECT USING (auth.role() = 'authenticated');
 
 CREATE POLICY "Super admin can manage budgets" ON budgets
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'super_admin')
-  );
+  FOR ALL USING (get_user_role() = 'super_admin');
 
--- Report imports
+-- ---------- REPORT IMPORTS ----------
 CREATE POLICY "Authenticated users can view imports" ON report_imports
   FOR SELECT USING (auth.role() = 'authenticated');
 
 CREATE POLICY "Admin can manage imports" ON report_imports
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin_input', 'super_admin'))
-  );
+  FOR ALL USING (get_user_role() IN ('admin_input', 'super_admin'));
 
--- Audit logs
+-- ---------- AUDIT LOGS ----------
 CREATE POLICY "Super admins can view audit logs" ON audit_logs
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'super_admin')
-  );
+  FOR SELECT USING (get_user_role() = 'super_admin');
 
 CREATE POLICY "Authenticated users can insert audit logs" ON audit_logs
   FOR INSERT WITH CHECK (auth.role() = 'authenticated');
@@ -238,14 +273,11 @@ CREATE POLICY "Authenticated users can insert audit logs" ON audit_logs
 -- HELPER FUNCTIONS
 -- ============================================================
 
--- Get user role
-CREATE OR REPLACE FUNCTION get_user_role()
-RETURNS TEXT AS $$
-  SELECT role FROM users WHERE id = auth.uid();
-$$ LANGUAGE SQL SECURITY DEFINER STABLE;
-
--- Get report with metrics
-CREATE OR REPLACE FUNCTION get_report_with_metrics(p_business_unit_id UUID, p_report_date DATE)
+-- Get daily report with its metrics for a specific unit and date
+CREATE OR REPLACE FUNCTION get_report_with_metrics(
+  p_business_unit_id TEXT,
+  p_report_date DATE
+)
 RETURNS TABLE (
   report_id UUID,
   metric_name VARCHAR,
