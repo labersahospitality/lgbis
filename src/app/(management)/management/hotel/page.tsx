@@ -6,7 +6,7 @@ import DateFilter from '@/components/ui/date-filter';
 import RevenueChart from '@/components/charts/revenue-chart';
 import AchievementChart from '@/components/charts/achievement-chart';
 import ComparisonTable from '@/components/ui/comparison-table';
-import { fetchDivisionData, fetchLatestReportDate, type DivisionUnitData } from '@/lib/dashboard-data';
+import { fetchDivisionData, fetchLatestHotelDailyReportDate, type DivisionUnitData } from '@/lib/dashboard-data';
 import { formatCurrency, formatPercent, getDateRange, cn } from '@/lib/utils';
 import { parseISO } from 'date-fns';
 
@@ -48,7 +48,7 @@ export default function HotelDashboard() {
 
   // Fetch latest report date on mount
   useEffect(() => {
-    fetchLatestReportDate().then(setLatestDate);
+    fetchLatestHotelDailyReportDate().then(setLatestDate);
   }, []);
 
   const loadData = useCallback(async () => {
@@ -83,6 +83,42 @@ export default function HotelDashboard() {
     loadData();
   }, [loadData]);
 
+  const isDailyFilter = dateFilter === 'latest' || dateFilter === 'today' || dateFilter === 'yesterday';
+  const selectedPeriod = dateFilter === 'ytd' ? 'ytd' : isDailyFilter ? 'today' : 'mtd';
+
+  const getSelectedMetric = (unit: DivisionUnitData, metricName: string): number | undefined => {
+    return unit[selectedPeriod].metrics.get(`${selectedPeriod}_${metricName}`);
+  };
+
+  const selectedHotelRows = units.map((u) => {
+    const totalRevenue = getSelectedMetric(u, 'total_revenue') ?? 0;
+    const roomRevenue = getSelectedMetric(u, 'room_revenue') ?? 0;
+    const fbRevenue = getSelectedMetric(u, 'fb_revenue') ?? 0;
+    const roomSold = getSelectedMetric(u, 'room_sold') ?? 0;
+    const occupancy = getSelectedMetric(u, 'occupancy') ?? null;
+    const roomAvailable = getSelectedMetric(u, 'room_available');
+    const roomSaleable = getSelectedMetric(u, 'room_saleable');
+    const available = roomAvailable ?? roomSaleable ?? (
+      occupancy !== null && occupancy > 0 && roomSold > 0
+        ? Math.round(roomSold / (occupancy / 100))
+        : 0
+    );
+
+    return {
+      name: u.unitName,
+      occupancy,
+      roomRevenue,
+      fbRevenue,
+      totalRevenue,
+      roomSold,
+      arr: getSelectedMetric(u, 'arr') ?? null,
+      available,
+      hasData: u[selectedPeriod].sourceDate !== null,
+    };
+  });
+
+  const selectedUnits = selectedHotelRows.filter((row) => row.hasData);
+
   // ── Compute Group KPIs (weighted across all hotels) ──
   //
   // Occupancy = (Σ room_sold) / (Σ room_available) × 100
@@ -92,19 +128,19 @@ export default function HotelDashboard() {
   // proportionally to its room inventory and sales volume.
 
   const totalRoomRevenue = units.reduce(
-    (s, u) => s + (u.mtd.metrics.get('mtd_room_revenue') ?? u.today.metrics.get('today_room_revenue') ?? 0),
+    (s, u) => s + (getSelectedMetric(u, 'room_revenue') ?? 0),
     0,
   );
   const totalFbRevenue = units.reduce(
-    (s, u) => s + (u.mtd.metrics.get('mtd_fb_revenue') ?? u.today.metrics.get('today_fb_revenue') ?? 0),
+    (s, u) => s + (getSelectedMetric(u, 'fb_revenue') ?? 0),
     0,
   );
   const totalRevenue = units.reduce(
-    (s, u) => s + (u.mtd.metrics.get('mtd_total_revenue') ?? u.today.metrics.get('today_total_revenue') ?? 0),
+    (s, u) => s + (getSelectedMetric(u, 'total_revenue') ?? 0),
     0,
   );
   const totalRoomSold = units.reduce(
-    (s, u) => s + (u.mtd.metrics.get('mtd_room_sold') ?? u.today.metrics.get('today_room_sold') ?? 0),
+    (s, u) => s + (getSelectedMetric(u, 'room_sold') ?? 0),
     0,
   );
 
@@ -114,14 +150,14 @@ export default function HotelDashboard() {
   // 3. Derived from occupancy & room_sold: room_available = room_sold / (occupancy / 100)
   const totalRoomAvailable = units.reduce((s, u) => {
     // Try direct metric first
-    const available = u.mtd.metrics.get('mtd_room_available') ?? u.today.metrics.get('today_room_available');
+    const available = getSelectedMetric(u, 'room_available');
     if (available !== undefined && available > 0) return s + available;
     // Try saleable
-    const saleable = u.mtd.metrics.get('mtd_room_saleable') ?? u.today.metrics.get('today_room_saleable');
+    const saleable = getSelectedMetric(u, 'room_saleable');
     if (saleable !== undefined && saleable > 0) return s + saleable;
     // Derive from occupancy & room_sold
-    const occ = u.mtd.metrics.get('mtd_occupancy') ?? u.today.metrics.get('today_occupancy');
-    const sold = u.mtd.metrics.get('mtd_room_sold') ?? u.today.metrics.get('today_room_sold');
+    const occ = getSelectedMetric(u, 'occupancy');
+    const sold = getSelectedMetric(u, 'room_sold');
     if (occ !== undefined && occ > 0 && sold !== undefined && sold > 0) {
       return s + Math.round(sold / (occ / 100));
     }
@@ -163,7 +199,7 @@ export default function HotelDashboard() {
     };
   });
 
-  const hasData = units.length > 0;
+  const hasData = isDailyFilter ? selectedUnits.length > 0 : units.length > 0;
 
   return (
     <div>
@@ -255,7 +291,7 @@ export default function HotelDashboard() {
           {/* Hotel Performance Table */}
           <ComparisonTable
             title="Hotel Performance"
-            rows={hotelRows.map((h) => ({
+            rows={selectedHotelRows.map((h) => ({
               unit_name: h.name,
               division: 'Hotel',
               metrics: [
@@ -284,22 +320,22 @@ export default function HotelDashboard() {
           {/* Charts */}
           <div className="grid-charts mt-6 mb-6">
             <RevenueChart
-              data={hotelRows.map((h) => ({ name: h.name, actual: h.totalRevenue, budget: null }))}
+              data={selectedHotelRows.map((h) => ({ name: h.name, actual: h.totalRevenue, budget: null }))}
               title="Total Revenue per Hotel"
             />
             <RevenueChart
-              data={hotelRows.map((h) => ({ name: h.name, actual: h.roomRevenue, budget: null }))}
+              data={selectedHotelRows.map((h) => ({ name: h.name, actual: h.roomRevenue, budget: null }))}
               title="Room Revenue per Hotel"
             />
           </div>
 
           <div className="grid-charts mb-6">
             <RevenueChart
-              data={hotelRows.map((h) => ({ name: h.name, actual: h.fbRevenue, budget: null }))}
+              data={selectedHotelRows.map((h) => ({ name: h.name, actual: h.fbRevenue, budget: null }))}
               title="F&B Revenue per Hotel"
             />
             <AchievementChart
-              items={hotelRows
+              items={selectedHotelRows
                 .filter((h) => h.occupancy !== null)
                 .map((h) => ({ name: h.name, achievement: h.occupancy! }))}
               title="Occupancy per Hotel"

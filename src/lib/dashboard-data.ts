@@ -242,6 +242,21 @@ export async function fetchLatestReportDate(): Promise<string | null> {
   return data?.report_date || null;
 }
 
+/** Get the latest daily report date for the Hotel division only. */
+export async function fetchLatestHotelDailyReportDate(): Promise<string | null> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from('daily_reports')
+    .select('report_date, business_units!inner(division_id)')
+    .eq('period_type', 'daily')
+    .eq('business_units.division_id', 'div-hotel')
+    .order('report_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data?.report_date || null;
+}
+
 // ── Step 5: fetchKPIs — Snapshot-based ──────────────────────
 
 export async function fetchKPIs(

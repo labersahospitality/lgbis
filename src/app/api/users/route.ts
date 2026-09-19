@@ -119,21 +119,14 @@ export async function POST(request: NextRequest) {
       throw authError || new Error('Failed to create auth user');
     }
 
-    // Create the profile in the users table
+    // The auth trigger creates the profile using the Auth user's ID and metadata.
     const {
       data: newUser,
       error: userError,
     } = await adminSupabase
       .from('users')
-      .insert({
-        id: user.id,
-        email,
-        full_name,
-        role,
-        active: active ?? true, // default to active if not provided
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .update({ active: active ?? true })
+      .eq('id', user.id)
       .select()
       .single();
 
